@@ -50,6 +50,7 @@ qiuzhao-tracker/
 │   ├── app.js
 │   └── initial_data.js     # 从 Excel 导入的初始投递数据
 ├── scripts/                # 数据处理工具
+│   ├── import_excel_to_db.py   # 直接导入 Excel 到数据库
 │   ├── read_xlsx_stdlib.py
 │   ├── convert_excel_data.py
 │   └── check_syntax.py
@@ -71,16 +72,26 @@ qiuzhao-tracker/
 
 前端由 Flask 直接作为静态文件提供，无需单独部署。
 
-## 从 Excel 更新初始数据
+## 从 Excel 更新数据
 
-如果 `D:\桌面\2026秋招投递.xlsx` 有更新：
+如果 `D:\桌面\2026秋招投递.xlsx` 有更新，可以直接导入到数据库：
 
 ```bash
-python scripts/read_xlsx_stdlib.py
-python scripts/convert_excel_data.py
+python scripts/import_excel_to_db.py
 ```
 
-生成新的 `static/initial_data.js` 后，新注册用户登录时会询问是否导入这些历史数据。
+脚本会：
+1. 读取 Excel 文件
+2. 自动创建数据库表和默认用户（`王爷`）
+3. 以「公司 + 岗位」作为唯一标识，新增或更新记录
+
+也可以指定 Excel 和数据库路径：
+
+```bash
+python scripts/import_excel_to_db.py "D:\桌面\2026秋招投递.xlsx" "C:\path\to\app.db"
+```
+
+> 注意：`import_excel_to_db.py` 直接操作 SQLite 数据库，运行前请确保 Flask 后端没有在占用 `app.db`。
 
 ## 注意事项
 
