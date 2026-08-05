@@ -65,3 +65,33 @@ class Application(db.Model):
             'username': self.user.username if self.user else None,
             'userId': self.user_id
         }
+
+
+class ApplicationHistory(db.Model):
+    __tablename__ = 'application_history'
+
+    id = db.Column(db.Integer, primary_key=True)
+    application_id = db.Column(db.String(64), db.ForeignKey('applications.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+
+    field = db.Column(db.String(40), nullable=False)  # 变更的字段，如 status、nextEvent 等
+    old_value = db.Column(db.Text, default='')
+    new_value = db.Column(db.Text, default='')
+    note = db.Column(db.Text, default='')  # 可选备注
+
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+
+    user = db.relationship('User')
+    application = db.relationship('Application', backref=db.backref('histories', lazy=True, cascade='all, delete-orphan'))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'applicationId': self.application_id,
+            'username': self.user.username if self.user else None,
+            'field': self.field,
+            'oldValue': self.old_value,
+            'newValue': self.new_value,
+            'note': self.note,
+            'createdAt': self.created_at.isoformat() if self.created_at else None
+        }

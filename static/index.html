@@ -76,6 +76,10 @@
                     <span class="nav-icon">⚙️</span>
                     <span>设置</span>
                 </a>
+                <button class="theme-toggle" id="themeToggle">
+                    <span class="nav-icon" id="themeIcon">🌙</span>
+                    <span id="themeText">深色模式</span>
+                </button>
             </nav>
 
             <div class="sidebar-widget">
@@ -304,6 +308,24 @@
                 </div>
             </section>
 
+            <!-- 详情弹窗 -->
+            <div class="modal hidden" id="detailModal">
+                <div class="modal-overlay" onclick="closeDetailModal()"></div>
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2 id="detailTitle">投递详情</h2>
+                        <button class="btn-text" onclick="closeDetailModal()">✕</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="detail-info" id="detailInfo"></div>
+                        <h3 class="detail-section-title">进度时间线</h3>
+                        <div class="timeline" id="detailTimeline">
+                            <p class="empty-tip">暂无历史记录</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- 视图：数据可视化 -->
             <section class="view hidden" id="view-stats">
                 <div class="charts-grid">
@@ -342,6 +364,11 @@
                     </div>
                     <div class="settings-content">
                         <div class="setting-item">
+                            <h3>桌面通知</h3>
+                            <p>开启后，每天首次登录时会提醒你当天的笔试/面试安排。</p>
+                            <button class="btn btn-primary" id="notifyBtn">开启通知</button>
+                        </div>
+                        <div class="setting-item">
                             <h3>导出备份</h3>
                             <p>将所有投递记录导出为 JSON 文件，可用于备份或迁移。</p>
                             <button class="btn btn-primary" id="exportBtn2">导出 JSON</button>
@@ -365,7 +392,6 @@
         </main>
     </div>
 
-    <script src="initial_data.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

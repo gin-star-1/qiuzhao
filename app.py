@@ -5,7 +5,7 @@ from flask_jwt_extended import JWTManager, create_access_token, jwt_required, ge
 from flask_cors import CORS
 
 from config import Config
-from models import db, User, Application
+from models import db, User, Application, ApplicationHistory
 
 
 app = Flask(__name__, static_folder='static')
@@ -130,6 +130,18 @@ def create_application():
         logo_url=data.get('logoUrl', '')
     )
     db.session.add(app_record)
+    db.session.flush()
+
+    # 记录初始状态
+    history = ApplicationHistory(
+        application_id=app_record.id,
+        user_id=user_id,
+        field='status',
+        old_value='',
+        new_value=app_record.status,
+        note='创建投递记录'
+    )
+    db.session.add(history)
     db.session.commit()
 
     return jsonify(app_record.to_dict()), 201
@@ -144,6 +156,11 @@ def update_application(app_id):
         return jsonify({'message': '记录不存在'}), 404
 
     data = request.get_json() or {}
+
+    # 记录变更前状态
+    old_status = app_record.status
+    old_next_event = app_record.next_event
+
     app_record.company = data.get('company', app_record.company).strip()
     app_record.position = data.get('position', app_record.position).strip()
     app_record.job_type = data.get('jobType', app_record.job_type)
@@ -154,6 +171,29 @@ def update_application(app_id):
     app_record.next_date = data.get('nextDate', app_record.next_date)
     app_record.remark = data.get('remark', app_record.remark)
     app_record.logo_url = data.get('logoUrl', app_record.logo_url)
+
+    # 记录状态变更历史
+    if old_status != app_record.status:
+        history = ApplicationHistory(
+            application_id=app_record.id,
+            user_id=user_id,
+            field='status',
+            old_value=old_status,
+            new_value=app_record.status,
+            note='更新进度'
+        )
+        db.session.add(history)
+
+    if old_next_event != app_record.next_event:
+        history = ApplicationHistory(
+            application_id=app_record.id,
+            user_id=user_id,
+            field='nextEvent',
+            old_value=old_next_event,
+            new_value=app_record.next_event,
+            note='更新下一步事件'
+        )
+        db.session.add(history)
 
     db.session.commit()
     return jsonify(app_record.to_dict())
@@ -170,6 +210,13 @@ def delete_application(app_id):
     db.session.delete(app_record)
     db.session.commit()
     return jsonify({'message': '删除成功'})
+
+
+@app.route('/api/applications/<app_id>/history', methods=['GET'])
+@jwt_required()
+def get_application_history(app_id):
+    histories = ApplicationHistory.query.filter_by(application_id=app_id).order_by(ApplicationHistory.created_at.desc()).all()
+    return jsonify([h.to_dict() for h in histories])
 
 
 # ---------------- 数据迁移/初始化 ----------------

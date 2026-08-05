@@ -4,12 +4,15 @@
 
 ## 功能
 
-- **用户系统**：注册、登录、JWT 鉴权
+- **用户系统**：注册、登录、JWT 鉴权，数据多用户共享可见
 - **概览页**：近期投递、笔面试日程、快捷统计
 - **新增投递**：记录公司、岗位、城市、进度、下一步事件等
-- **投递列表**：搜索、筛选、编辑、删除
+- **投递列表**：搜索、筛选、编辑、删除，显示创建者
+- **投递详情**：查看每家公司投递进度的时间线（谁改了什么、什么时候改的）
 - **数据可视化**：进度分布、近 30 天投递趋势、岗位类型分布、城市分布
 - **公司 Logo**：自动尝试加载对应公司 Logo，失败时显示首字母占位
+- **桌面通知**：每天首次登录提醒当日笔试/面试
+- **深色模式**：侧边栏一键切换，偏好自动保存
 - **数据管理**：导出/导入 JSON 备份、清空数据
 
 ## 本地运行
@@ -40,20 +43,14 @@ python app.py
 ```
 qiuzhao-tracker/
 ├── app.py                  # Flask 后端主入口
-├── models.py               # 数据库模型（User / Application）
+├── models.py               # 数据库模型（User / Application / ApplicationHistory）
 ├── config.py               # 配置
 ├── requirements.txt        # Python 依赖
 ├── .gitignore
 ├── static/                 # 前端静态文件
 │   ├── index.html
 │   ├── styles.css
-│   ├── app.js
-│   └── initial_data.js     # 从 Excel 导入的初始投递数据
-├── scripts/                # 数据处理工具
-│   ├── import_excel_to_db.py   # 直接导入 Excel 到数据库
-│   ├── read_xlsx_stdlib.py
-│   ├── convert_excel_data.py
-│   └── check_syntax.py
+│   └── app.js
 └── README.md
 ```
 
@@ -72,26 +69,9 @@ qiuzhao-tracker/
 
 前端由 Flask 直接作为静态文件提供，无需单独部署。
 
-## 从 Excel 更新数据
+## 数据导入
 
-如果 `D:\桌面\2026秋招投递.xlsx` 有更新，可以直接导入到数据库：
-
-```bash
-python scripts/import_excel_to_db.py
-```
-
-脚本会：
-1. 读取 Excel 文件
-2. 自动创建数据库表和默认用户（`王爷`）
-3. 以「公司 + 岗位」作为唯一标识，新增或更新记录
-
-也可以指定 Excel 和数据库路径：
-
-```bash
-python scripts/import_excel_to_db.py "D:\桌面\2026秋招投递.xlsx" "C:\path\to\app.db"
-```
-
-> 注意：`import_excel_to_db.py` 直接操作 SQLite 数据库，运行前请确保 Flask 后端没有在占用 `app.db`。
+在「设置」页面可以导出当前投递记录为 JSON 备份，也可以从 JSON 文件恢复。适合换设备或定期备份。
 
 ## 注意事项
 

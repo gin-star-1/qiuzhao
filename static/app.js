@@ -21,6 +21,14 @@ document.addEventListener('DOMContentLoaded', () => {
     initForm();
     initListFilters();
     initSettings();
+    initTheme();
+    requestNotificationPermission();
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            closeDetailModal();
+        }
+    });
 
     if (authToken) {
         validateToken();
@@ -107,7 +115,8 @@ async function register(username, password) {
         });
         setAuth(data.token, data.user);
         showToast('注册成功', 'success');
-        await onLoginSuccess();
+        showApp();
+        await loadApplications();
     } catch (err) {
         showToast(err.message, 'error');
     }
@@ -121,7 +130,8 @@ async function login(username, password) {
         });
         setAuth(data.token, data.user);
         showToast('登录成功', 'success');
-        await onLoginSuccess();
+        showApp();
+        await loadApplications();
     } catch (err) {
         showToast(err.message, 'error');
     }
@@ -144,18 +154,6 @@ async function validateToken() {
     }
 }
 
-async function onLoginSuccess() {
-    showApp();
-    await loadApplications();
-
-    // 新注册用户且数据库为空时，询问是否导入 Excel 初始数据
-    if (applications.length === 0 && typeof INITIAL_DATA !== 'undefined' && INITIAL_DATA.length > 0) {
-        if (confirm('是否将历史 Excel 数据导入到当前账号？')) {
-            await seedInitialData();
-        }
-    }
-}
-
 function logout() {
     authToken = null;
     currentUser = null;
@@ -173,19 +171,6 @@ function showApp() {
 function showAuth() {
     document.getElementById('authContainer').classList.remove('hidden');
     document.getElementById('appContainer').classList.add('hidden');
-}
-
-async function seedInitialData() {
-    try {
-        const data = await api('/seed', {
-            method: 'POST',
-            body: JSON.stringify({ data: INITIAL_DATA })
-        });
-        showToast(data.message, 'success');
-        await loadApplications();
-    } catch (err) {
-        showToast(err.message, 'error');
-    }
 }
 
 // ---------------- 应用数据 ----------------
@@ -451,6 +436,7 @@ function renderAll() {
     renderTable();
     renderSidebarTodo();
     setTodayDate();
+    checkTodayNotifications();
 }
 
 function renderStats() {
@@ -610,8 +596,9 @@ function renderTable() {
                 <td>${escapeHtml(app.username || '-')}</td>
                 <td>
                     <div class="actions">
+                        <button class="btn btn-secondary btn-sm" onclick="openDetailModal('${app.id}')">详情</button>
                         ${isOwner ? `<button class="btn btn-secondary btn-sm" onclick="editApplication('${app.id}')">编辑</button>` : ''}
-                        ${isOwner ? `<button class="btn btn-danger btn-sm" onclick="deleteApplication('${app.id}')">删除</button>` : '<span class="text-muted" style="font-size:12px;color:var(--text-secondary)">仅查看</span>'}
+                        ${isOwner ? `<button class="btn btn-danger btn-sm" onclick="deleteApplication('${app.id}')">删除</button>` : ''}
                     </div>
                 </td>
             </tr>
@@ -751,6 +738,122 @@ function destroyCharts() {
     charts = {};
 }
 
+// ---------------- 详情弹窗 ----------------
+
+async function openDetailModal(appId) {
+    const app = applications.find(a => a.id === appId);
+    if (!app) return;
+
+    document.getElementById('detailTitle').textContent = `${app.company} · ${app.position}`;
+    document.getElementById('detailInfo').innerHTML = `
+        <div class="detail-item"><span class="detail-label">公司</span><span class="detail-value">${escapeHtml(app.company)}</span></div>
+        <div class="detail-item"><span class="detail-label">岗位</span><span class="detail-value">${escapeHtml(app.position)}</span></div>
+        <div class="detail-item"><span class="detail-label">类型</span><span class="detail-value">${escapeHtml(app.jobType)}</span></div>
+        <div class="detail-item"><span class="detail-label">城市</span><span class="detail-value">${escapeHtml(app.city || '-')}</span></div>
+        <div class="detail-item"><span class="detail-label">投递日期</span><span class="detail-value">${app.applyDate}</span></div>
+        <div class="detail-item"><span class="detail-label">当前进度</span><span class="detail-value"><span class="status-badge status-${app.status}">${app.status}</span></span></div>
+        <div class="detail-item"><span class="detail-label">下一步</span><span class="detail-value">${app.nextEvent ? app.nextEvent + ' ' + app.nextDate : '-'}</span></div>
+        <div class="detail-item"><span class="detail-label">创建者</span><span class="detail-value">${escapeHtml(app.username || '-')}</span></div>
+        <div class="detail-item" style="grid-column: 1 / -1"><span class="detail-label">备注</span><span class="detail-value">${escapeHtml(app.remark || '-')}</span></div>
+    `;
+
+    const timelineContainer = document.getElementById('detailTimeline');
+    timelineContainer.innerHTML = '<p class="empty-tip">加载中...</p>';
+    document.getElementById('detailModal').classList.remove('hidden');
+
+    try {
+        const histories = await api(`/applications/${appId}/history`);
+        if (histories.length === 0) {
+            timelineContainer.innerHTML = '<p class="empty-tip">暂无历史记录</p>';
+        } else {
+            timelineContainer.innerHTML = histories.map(h => {
+                const time = new Date(h.createdAt).toLocaleString('zh-CN');
+                let content = '';
+                if (h.field === 'status') {
+                    content = `进度从 <span class="status-badge status-${h.oldValue || '待投递'}">${h.oldValue || '无'}</span> 变为 <span class="status-badge status-${h.newValue}">${h.newValue}</span>`;
+                } else if (h.field === 'nextEvent') {
+                    content = `下一步事件从「${h.oldValue || '无'}」变为「${h.newValue || '无'}」`;
+                } else {
+                    content = `${h.field} 变更`;
+                }
+                return `
+                    <div class="timeline-item">
+                        <div class="timeline-time">${time} · ${escapeHtml(h.username || '未知用户')}</div>
+                        <div class="timeline-content">${content}</div>
+                        ${h.note ? `<div class="timeline-note">${escapeHtml(h.note)}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+    } catch (err) {
+        timelineContainer.innerHTML = `<p class="empty-tip">加载失败：${escapeHtml(err.message)}</p>`;
+    }
+}
+
+function closeDetailModal() {
+    document.getElementById('detailModal').classList.add('hidden');
+}
+
+// ---------------- 深色模式 ----------------
+
+const THEME_KEY = 'qiuzhao_theme';
+
+function initTheme() {
+    const saved = localStorage.getItem(THEME_KEY);
+    const isDark = saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    setTheme(isDark);
+
+    document.getElementById('themeToggle').addEventListener('click', () => {
+        const currentlyDark = document.body.classList.contains('dark');
+        setTheme(!currentlyDark);
+    });
+}
+
+function setTheme(isDark) {
+    if (isDark) {
+        document.body.classList.add('dark');
+        document.getElementById('themeIcon').textContent = '☀️';
+        document.getElementById('themeText').textContent = '浅色模式';
+    } else {
+        document.body.classList.remove('dark');
+        document.getElementById('themeIcon').textContent = '🌙';
+        document.getElementById('themeText').textContent = '深色模式';
+    }
+    localStorage.setItem(THEME_KEY, isDark ? 'dark' : 'light');
+}
+
+// ---------------- 浏览器通知 ----------------
+
+function requestNotificationPermission() {
+    if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+    }
+}
+
+function checkTodayNotifications() {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const todayEvents = applications.filter(a => {
+        if (!a.nextEvent || !a.nextDate) return false;
+        const d = parseLocalDate(a.nextDate);
+        return d && d.getTime() === today.getTime();
+    });
+
+    if (todayEvents.length === 0) return;
+
+    const notifiedKey = `qiuzhao_notified_${formatLocalDate(today)}`;
+    if (localStorage.getItem(notifiedKey)) return;
+
+    const title = `今日有 ${todayEvents.length} 个秋招事项`;
+    const body = todayEvents.map(a => `${a.company} · ${a.nextEvent}`).join('，');
+    new Notification(title, { body, icon: '/favicon.ico' });
+
+    localStorage.setItem(notifiedKey, '1');
+}
+
 // ---------------- 设置 ----------------
 
 function initSettings() {
@@ -759,6 +862,19 @@ function initSettings() {
     document.getElementById('importFile').addEventListener('change', importData);
     document.getElementById('importFile2').addEventListener('change', importData);
     document.getElementById('clearAllBtn').addEventListener('click', clearAllData);
+    document.getElementById('notifyBtn').addEventListener('click', async () => {
+        if (!('Notification' in window)) {
+            showToast('当前浏览器不支持通知', 'error');
+            return;
+        }
+        const result = await Notification.requestPermission();
+        if (result === 'granted') {
+            showToast('通知已开启', 'success');
+            checkTodayNotifications();
+        } else {
+            showToast('通知权限被拒绝', 'error');
+        }
+    });
 }
 
 function exportData() {
