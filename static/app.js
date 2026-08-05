@@ -221,6 +221,7 @@ function switchView(viewName) {
     document.getElementById('pageTitle').textContent = titles[viewName] || '';
 
     if (viewName === 'stats') {
+        loadStats();
         renderCharts();
     }
 }
@@ -247,6 +248,7 @@ async function handleSubmit(e) {
         status: document.getElementById('status').value,
         nextEvent: document.getElementById('nextEvent').value,
         nextDate: document.getElementById('nextDate').value,
+        deadline: document.getElementById('deadline').value,
         remark: document.getElementById('remark').value.trim(),
         logoUrl: ''
     };
@@ -299,6 +301,7 @@ function editApplication(id) {
     document.getElementById('status').value = app.status;
     document.getElementById('nextEvent').value = app.nextEvent;
     document.getElementById('nextDate').value = app.nextDate;
+    document.getElementById('deadline').value = app.deadline || '';
     document.getElementById('remark').value = app.remark;
 
     switchView('add');
@@ -433,10 +436,12 @@ function renderAll() {
     renderStats();
     renderRecentList();
     renderSchedule();
+    renderDeadlines();
     renderTable();
     renderSidebarTodo();
     setTodayDate();
     checkTodayNotifications();
+    checkDeadlineNotifications();
 }
 
 function renderStats() {
@@ -523,6 +528,48 @@ function renderSchedule() {
                     <p>${escapeHtml(app.city || '')} · ${escapeHtml(app.username || '未知用户')}</p>
                 </div>
                 <span class="schedule-tag ${getEventTagClass(app.nextEvent, isToday)}">${isToday ? '今日' : app.nextEvent}</span>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderDeadlines() {
+    const container = document.getElementById('deadlineList');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const upcoming = applications
+        .filter(a => a.deadline)
+        .map(a => {
+            const d = parseLocalDate(a.deadline);
+            return { ...a, deadlineTime: d ? d.getTime() : 0 };
+        })
+        .filter(a => a.deadlineTime >= today.getTime())
+        .sort((a, b) => a.deadlineTime - b.deadlineTime)
+        .slice(0, 10);
+
+    if (upcoming.length === 0) {
+        container.innerHTML = '<p class="empty-tip">暂无 upcoming 的网申截止</p>';
+        return;
+    }
+
+    container.innerHTML = upcoming.map(app => {
+        const date = parseLocalDate(app.deadline);
+        const isSoon = date && (date.getTime() - today.getTime()) <= 3 * 86400000;
+        const month = date ? date.getMonth() + 1 : '';
+        const day = date ? date.getDate() : '';
+
+        return `
+            <div class="schedule-item">
+                <div class="schedule-date">
+                    <span class="day">${day}</span>
+                    <span class="month">${month}月</span>
+                </div>
+                <div class="schedule-info">
+                    <h4>${escapeHtml(app.company)} · ${escapeHtml(app.position)}</h4>
+                    <p>${escapeHtml(app.username || '未知用户')}</p>
+                </div>
+                <span class="deadline-tag ${isSoon ? 'deadline-soon' : ''}">${isSoon ? '即将截止' : '未截止'}</span>
             </div>
         `;
     }).join('');
@@ -619,6 +666,24 @@ function initListFilters() {
 
 // ---------------- 图表 ----------------
 
+let statsData = null;
+
+async function loadStats() {
+    try {
+        statsData = await api('/stats');
+        document.getElementById('statTotal2').textContent = statsData.total || 0;
+
+        const offerStage = (statsData.funnel || []).find(f => f.stage === '已offer');
+        document.getElementById('statOfferRate').textContent = offerStage ? `${offerStage.rate}%` : '0%';
+
+        const avgKey = '已投递->笔试中';
+        const avgDays = statsData.avgResponseDays && statsData.avgResponseDays[avgKey];
+        document.getElementById('statAvgResponse').textContent = avgDays !== undefined ? `${avgDays} 天` : '-';
+    } catch (err) {
+        console.error('加载统计失败', err);
+    }
+}
+
 function renderCharts() {
     const statusCounts = {};
     STATUS_OPTIONS.forEach(s => statusCounts[s] = 0);
@@ -656,6 +721,41 @@ function renderCharts() {
     };
 
     destroyCharts();
+
+    // 漏斗图
+    if (statsData && statsData.funnel) {
+        const funnelData = statsData.funnel;
+        charts.funnel = new Chart(document.getElementById('funnelChart'), {
+            type: 'bar',
+            data: {
+                labels: funnelData.map(f => f.stage),
+                datasets: [{
+                    label: '人数',
+                    data: funnelData.map(f => f.count),
+                    backgroundColor: ['#3b82f6', '#f59e0b', '#10b981', '#ef4444'],
+                    barPercentage: 0.6
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            afterLabel: (ctx) => {
+                                const item = funnelData[ctx.dataIndex];
+                                return `占总投递 ${item.rate}% | 阶段转化率 ${item.stageRate}%`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { beginAtZero: true, ticks: { stepSize: 1 } }
+                }
+            }
+        });
+    }
 
     charts.status = new Chart(document.getElementById('statusChart'), {
         type: 'doughnut',
@@ -740,10 +840,13 @@ function destroyCharts() {
 
 // ---------------- 详情弹窗 ----------------
 
+let currentDetailCompanyId = null;
+
 async function openDetailModal(appId) {
     const app = applications.find(a => a.id === appId);
     if (!app) return;
 
+    currentDetailCompanyId = app.companyId;
     document.getElementById('detailTitle').textContent = `${app.company} · ${app.position}`;
     document.getElementById('detailInfo').innerHTML = `
         <div class="detail-item"><span class="detail-label">公司</span><span class="detail-value">${escapeHtml(app.company)}</span></div>
@@ -751,11 +854,16 @@ async function openDetailModal(appId) {
         <div class="detail-item"><span class="detail-label">类型</span><span class="detail-value">${escapeHtml(app.jobType)}</span></div>
         <div class="detail-item"><span class="detail-label">城市</span><span class="detail-value">${escapeHtml(app.city || '-')}</span></div>
         <div class="detail-item"><span class="detail-label">投递日期</span><span class="detail-value">${app.applyDate}</span></div>
+        <div class="detail-item"><span class="detail-label">网申截止</span><span class="detail-value">${app.deadline || '-'}</span></div>
         <div class="detail-item"><span class="detail-label">当前进度</span><span class="detail-value"><span class="status-badge status-${app.status}">${app.status}</span></span></div>
         <div class="detail-item"><span class="detail-label">下一步</span><span class="detail-value">${app.nextEvent ? app.nextEvent + ' ' + app.nextDate : '-'}</span></div>
         <div class="detail-item"><span class="detail-label">创建者</span><span class="detail-value">${escapeHtml(app.username || '-')}</span></div>
         <div class="detail-item" style="grid-column: 1 / -1"><span class="detail-label">备注</span><span class="detail-value">${escapeHtml(app.remark || '-')}</span></div>
     `;
+
+    document.getElementById('sharedNotesInput').value = app.sharedNotes || '';
+    const saveBtn = document.getElementById('saveSharedNotesBtn');
+    saveBtn.onclick = () => saveSharedNotes();
 
     const timelineContainer = document.getElementById('detailTimeline');
     timelineContainer.innerHTML = '<p class="empty-tip">加载中...</p>';
@@ -790,8 +898,27 @@ async function openDetailModal(appId) {
     }
 }
 
+async function saveSharedNotes() {
+    if (!currentDetailCompanyId) {
+        showToast('未找到公司信息', 'error');
+        return;
+    }
+    const notes = document.getElementById('sharedNotesInput').value;
+    try {
+        await api(`/companies/${currentDetailCompanyId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ sharedNotes: notes })
+        });
+        showToast('共享备注已保存', 'success');
+        await loadApplications();
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+}
+
 function closeDetailModal() {
     document.getElementById('detailModal').classList.add('hidden');
+    currentDetailCompanyId = null;
 }
 
 // ---------------- 深色模式 ----------------
@@ -849,6 +976,32 @@ function checkTodayNotifications() {
 
     const title = `今日有 ${todayEvents.length} 个秋招事项`;
     const body = todayEvents.map(a => `${a.company} · ${a.nextEvent}`).join('，');
+    new Notification(title, { body, icon: '/favicon.ico' });
+
+    localStorage.setItem(notifiedKey, '1');
+}
+
+function checkDeadlineNotifications() {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const soonDeadlines = applications.filter(a => {
+        if (!a.deadline) return false;
+        const d = parseLocalDate(a.deadline);
+        if (!d) return false;
+        const diff = (d.getTime() - today.getTime()) / 86400000;
+        return diff >= 0 && diff <= 2;
+    });
+
+    if (soonDeadlines.length === 0) return;
+
+    const notifiedKey = `qiuzhao_deadline_notified_${formatLocalDate(today)}`;
+    if (localStorage.getItem(notifiedKey)) return;
+
+    const title = `有 ${soonDeadlines.length} 个网申即将截止`;
+    const body = soonDeadlines.map(a => `${a.company} · ${a.deadline}`).join('，');
     new Notification(title, { body, icon: '/favicon.ico' });
 
     localStorage.setItem(notifiedKey, '1');

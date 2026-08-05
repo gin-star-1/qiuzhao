@@ -962,6 +962,42 @@ body {
     margin-top: 4px;
 }
 
+.shared-notes {
+    margin-bottom: 20px;
+}
+
+.shared-notes textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 14px;
+    background: var(--bg);
+    color: var(--text);
+    resize: vertical;
+}
+
+.shared-notes-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 10px;
+}
+
+.deadline-tag {
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.deadline-soon {
+    background: #fef3c7;
+    color: #92400e;
+}
+
 /* 深色模式 */
 body.dark {
     --bg: #0f172a;

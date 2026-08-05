@@ -186,6 +186,15 @@
                             <p class="empty-tip">暂无 upcoming 的笔试或面试</p>
                         </div>
                     </div>
+
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h2>即将截止</h2>
+                        </div>
+                        <div class="schedule-list" id="deadlineList">
+                            <p class="empty-tip">暂无 upcoming 的网申截止</p>
+                        </div>
+                    </div>
                 </div>
             </section>
 
@@ -254,6 +263,10 @@
                                 <label for="nextDate">事件日期</label>
                                 <input type="date" id="nextDate">
                             </div>
+                            <div class="form-group">
+                                <label for="deadline">网申截止</label>
+                                <input type="date" id="deadline">
+                            </div>
                         </div>
                         <div class="form-group full-width">
                             <label for="remark">备注</label>
@@ -318,6 +331,15 @@
                     </div>
                     <div class="modal-body">
                         <div class="detail-info" id="detailInfo"></div>
+
+                        <h3 class="detail-section-title">公司共享面经/备注</h3>
+                        <div class="shared-notes" id="sharedNotesSection">
+                            <textarea id="sharedNotesInput" rows="4" placeholder="分享这家公司的面经、流程、注意事项等，所有用户可见..."></textarea>
+                            <div class="shared-notes-actions">
+                                <button class="btn btn-primary btn-sm" id="saveSharedNotesBtn">保存共享备注</button>
+                            </div>
+                        </div>
+
                         <h3 class="detail-section-title">进度时间线</h3>
                         <div class="timeline" id="detailTimeline">
                             <p class="empty-tip">暂无历史记录</p>
@@ -328,7 +350,36 @@
 
             <!-- 视图：数据可视化 -->
             <section class="view hidden" id="view-stats">
+                <div class="stats-grid" id="advancedStats">
+                    <div class="stat-card">
+                        <div class="stat-icon total">📨</div>
+                        <div class="stat-detail">
+                            <span class="stat-label">总投递</span>
+                            <strong class="stat-value" id="statTotal2">0</strong>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon offer">🎯</div>
+                        <div class="stat-detail">
+                            <span class="stat-label">Offer 率</span>
+                            <strong class="stat-value" id="statOfferRate">0%</strong>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon interview">⏱️</div>
+                        <div class="stat-detail">
+                            <span class="stat-label">投递→笔试平均</span>
+                            <strong class="stat-value" id="statAvgResponse">-</strong>
+                        </div>
+                    </div>
+                </div>
                 <div class="charts-grid">
+                    <div class="panel chart-panel">
+                        <div class="panel-header">
+                            <h2>转化率漏斗</h2>
+                        </div>
+                        <canvas id="funnelChart"></canvas>
+                    </div>
                     <div class="panel chart-panel">
                         <div class="panel-header">
                             <h2>进度分布</h2>

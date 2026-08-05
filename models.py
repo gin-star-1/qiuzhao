@@ -43,6 +43,7 @@ class Application(db.Model):
     status = db.Column(db.String(40), default='已投递')
     next_event = db.Column(db.String(40), default='')
     next_date = db.Column(db.String(20), default='')
+    deadline = db.Column(db.String(20), default='')  # 网申截止日期
     remark = db.Column(db.Text, default='')
     logo_url = db.Column(db.String(512), default='')
 
@@ -60,11 +61,22 @@ class Application(db.Model):
             'status': self.status,
             'nextEvent': self.next_event,
             'nextDate': self.next_date,
+            'deadline': self.deadline,
             'remark': self.remark,
             'logoUrl': self.logo_url,
             'username': self.user.username if self.user else None,
-            'userId': self.user_id
+            'userId': self.user_id,
+            'sharedNotes': self.get_company_shared_notes(),
+            'companyId': self.get_company_id()
         }
+
+    def get_company_shared_notes(self):
+        company = Company.query.filter_by(name=self.company).first()
+        return company.shared_notes if company else ''
+
+    def get_company_id(self):
+        company = Company.query.filter_by(name=self.company).first()
+        return company.id if company else None
 
 
 class ApplicationHistory(db.Model):
@@ -94,4 +106,21 @@ class ApplicationHistory(db.Model):
             'newValue': self.new_value,
             'note': self.note,
             'createdAt': self.created_at.isoformat() if self.created_at else None
+        }
+
+
+class Company(db.Model):
+    __tablename__ = 'companies'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), unique=True, nullable=False)
+    shared_notes = db.Column(db.Text, default='')  # 共享面经/备注
+    updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'sharedNotes': self.shared_notes,
+            'updatedAt': self.updated_at.isoformat() if self.updated_at else None
         }

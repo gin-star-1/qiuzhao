@@ -5,7 +5,7 @@ from flask_jwt_extended import JWTManager, create_access_token, jwt_required, ge
 from flask_cors import CORS
 
 from config import Config
-from models import db, User, Application, ApplicationHistory
+from models import db, User, Application, ApplicationHistory, Company
 
 
 app = Flask(__name__, static_folder='static')
@@ -22,6 +22,15 @@ jwt = JWTManager(app)
 def generate_id():
     import uuid
     return 'app-' + uuid.uuid4().hex[:12]
+
+
+def get_or_create_company(name):
+    company = Company.query.filter_by(name=name).first()
+    if not company:
+        company = Company(name=name)
+        db.session.add(company)
+        db.session.flush()
+    return company
 
 
 # ---------------- 静态页面 ----------------
@@ -115,10 +124,13 @@ def create_application():
         if not data.get(field):
             return jsonify({'message': f'{field} 不能为空'}), 400
 
+    company_name = data.get('company', '').strip()
+    get_or_create_company(company_name)
+
     app_record = Application(
         id=generate_id(),
         user_id=user_id,
-        company=data.get('company', '').strip(),
+        company=company_name,
         position=data.get('position', '').strip(),
         job_type=data.get('jobType', '开发'),
         city=data.get('city', '').strip(),
@@ -126,6 +138,7 @@ def create_application():
         status=data.get('status'),
         next_event=data.get('nextEvent', ''),
         next_date=data.get('nextDate', ''),
+        deadline=data.get('deadline', ''),
         remark=data.get('remark', ''),
         logo_url=data.get('logoUrl', '')
     )
@@ -161,7 +174,10 @@ def update_application(app_id):
     old_status = app_record.status
     old_next_event = app_record.next_event
 
-    app_record.company = data.get('company', app_record.company).strip()
+    new_company = data.get('company', app_record.company).strip()
+    if new_company != app_record.company:
+        get_or_create_company(new_company)
+    app_record.company = new_company
     app_record.position = data.get('position', app_record.position).strip()
     app_record.job_type = data.get('jobType', app_record.job_type)
     app_record.city = data.get('city', app_record.city).strip()
@@ -169,6 +185,7 @@ def update_application(app_id):
     app_record.status = data.get('status', app_record.status)
     app_record.next_event = data.get('nextEvent', app_record.next_event)
     app_record.next_date = data.get('nextDate', app_record.next_date)
+    app_record.deadline = data.get('deadline', app_record.deadline)
     app_record.remark = data.get('remark', app_record.remark)
     app_record.logo_url = data.get('logoUrl', app_record.logo_url)
 
@@ -217,6 +234,91 @@ def delete_application(app_id):
 def get_application_history(app_id):
     histories = ApplicationHistory.query.filter_by(application_id=app_id).order_by(ApplicationHistory.created_at.desc()).all()
     return jsonify([h.to_dict() for h in histories])
+
+
+# ---------------- 公司共享面经 ----------------
+
+@app.route('/api/companies', methods=['GET'])
+@jwt_required()
+def get_companies():
+    companies = Company.query.order_by(Company.name).all()
+    return jsonify([c.to_dict() for c in companies])
+
+
+@app.route('/api/companies/<int:company_id>', methods=['PUT'])
+@jwt_required()
+def update_company(company_id):
+    company = Company.query.get_or_404(company_id)
+    data = request.get_json() or {}
+    company.shared_notes = data.get('sharedNotes', company.shared_notes)
+    db.session.commit()
+    return jsonify(company.to_dict())
+
+
+# ---------------- 统计看板 ----------------
+
+@app.route('/api/stats', methods=['GET'])
+@jwt_required()
+def get_stats():
+    apps = Application.query.all()
+
+    total = len(apps)
+    if total == 0:
+        return jsonify({
+            'total': 0,
+            'funnel': [],
+            'avgResponseDays': {}
+        })
+
+    # 漏斗：按关键进度统计人数及转化率
+    funnel_stages = ['已投递', '笔试中', '面试中', '已offer']
+    funnel = []
+    prev_count = None
+    for i, stage in enumerate(funnel_stages):
+        count = sum(1 for a in apps if a.status == stage)
+        rate = round(count / total * 100, 1) if total > 0 else 0
+        if i == 0:
+            stage_rate = 100.0
+        else:
+            stage_rate = round(count / prev_count * 100, 1) if prev_count and prev_count > 0 else 0
+        funnel.append({
+            'stage': stage,
+            'count': count,
+            'rate': rate,
+            'stageRate': stage_rate
+        })
+        prev_count = count
+
+    # 平均响应周期：基于历史记录计算各阶段首次出现的时间差
+    avg_response_days = {}
+    transition_pairs = [
+        ('已投递', '笔试中'),
+        ('笔试中', '面试中'),
+        ('面试中', '已offer')
+    ]
+
+    for from_status, to_status in transition_pairs:
+        durations = []
+        for app in apps:
+            histories = ApplicationHistory.query.filter_by(application_id=app.id, field='status').order_by(ApplicationHistory.created_at).all()
+            from_time = None
+            to_time = None
+            for h in histories:
+                if h.new_value == from_status and from_time is None:
+                    from_time = h.created_at
+                if h.new_value == to_status:
+                    to_time = h.created_at
+                    break
+            if from_time and to_time and to_time > from_time:
+                durations.append((to_time - from_time).total_seconds() / 86400)
+        if durations:
+            avg_response_days[f'{from_status}->{to_status}'] = round(sum(durations) / len(durations), 1)
+
+    return jsonify({
+        'total': total,
+        'funnel': funnel,
+        'avgResponseDays': avg_response_days
+    })
 
 
 # ---------------- 数据迁移/初始化 ----------------
