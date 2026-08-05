@@ -61,5 +61,7 @@ class Application(db.Model):
             'nextEvent': self.next_event,
             'nextDate': self.next_date,
             'remark': self.remark,
-            'logoUrl': self.logo_url
+            'logoUrl': self.logo_url,
+            'username': self.user.username if self.user else None,
+            'userId': self.user_id
         }

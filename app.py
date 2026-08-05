@@ -99,8 +99,8 @@ def me():
 @app.route('/api/applications', methods=['GET'])
 @jwt_required()
 def get_applications():
-    user_id = get_jwt_identity()
-    apps = Application.query.filter_by(user_id=user_id).order_by(Application.apply_date.desc()).all()
+    # 所有登录用户都可以看到全部投递记录
+    apps = Application.query.order_by(Application.apply_date.desc()).all()
     return jsonify([a.to_dict() for a in apps])
 
 

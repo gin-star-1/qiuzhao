@@ -487,7 +487,7 @@ function renderRecentList() {
             </div>
             <div class="card-info">
                 <h3>${escapeHtml(app.company)} · ${escapeHtml(app.position)}</h3>
-                <p>${escapeHtml(app.jobType)} ${app.city ? '· ' + escapeHtml(app.city) : ''}</p>
+                <p>${escapeHtml(app.jobType)} ${app.city ? '· ' + escapeHtml(app.city) : ''} · ${escapeHtml(app.username || '未知用户')}</p>
             </div>
             <div class="card-meta">
                 <span class="status-badge status-${app.status}">${app.status}</span>
@@ -534,7 +534,7 @@ function renderSchedule() {
                 </div>
                 <div class="schedule-info">
                     <h4>${escapeHtml(app.company)} · ${escapeHtml(app.position)}</h4>
-                    <p>${escapeHtml(app.city || '')}</p>
+                    <p>${escapeHtml(app.city || '')} · ${escapeHtml(app.username || '未知用户')}</p>
                 </div>
                 <span class="schedule-tag ${getEventTagClass(app.nextEvent, isToday)}">${isToday ? '今日' : app.nextEvent}</span>
             </div>
@@ -565,7 +565,7 @@ function renderSidebarTodo() {
             <span class="todo-dot"></span>
             <div>
                 <div>${escapeHtml(app.company)}</div>
-                <div class="todo-time">${app.nextEvent}</div>
+                <div class="todo-time">${app.nextEvent} · ${escapeHtml(app.username || '未知用户')}</div>
             </div>
         </div>
     `).join('');
@@ -585,34 +585,38 @@ function renderTable() {
     }).sort((a, b) => parseLocalDate(b.applyDate) - parseLocalDate(a.applyDate));
 
     if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" class="empty-tip">没有找到匹配的记录</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" class="empty-tip">没有找到匹配的记录</td></tr>`;
         return;
     }
 
-    tbody.innerHTML = filtered.map(app => `
-        <tr>
-            <td>
-                <div class="company-cell">
-                    <div style="position:relative">
-                        <img class="company-logo" alt="${app.company}" data-company="${app.company}">
+    tbody.innerHTML = filtered.map(app => {
+        const isOwner = currentUser && String(app.userId) === String(currentUser.id);
+        return `
+            <tr>
+                <td>
+                    <div class="company-cell">
+                        <div style="position:relative">
+                            <img class="company-logo" alt="${app.company}" data-company="${app.company}">
+                        </div>
+                        <span>${escapeHtml(app.company)}</span>
                     </div>
-                    <span>${escapeHtml(app.company)}</span>
-                </div>
-            </td>
-            <td>${escapeHtml(app.position)}</td>
-            <td>${escapeHtml(app.jobType)}</td>
-            <td>${escapeHtml(app.city || '-')}</td>
-            <td>${app.applyDate}</td>
-            <td><span class="status-badge status-${app.status}">${app.status}</span></td>
-            <td>${app.nextEvent ? app.nextEvent + ' ' + app.nextDate : '-'}</td>
-            <td>
-                <div class="actions">
-                    <button class="btn btn-secondary btn-sm" onclick="editApplication('${app.id}')">编辑</button>
-                    <button class="btn btn-danger btn-sm" onclick="deleteApplication('${app.id}')">删除</button>
-                </div>
-            </td>
-        </tr>
-    `).join('');
+                </td>
+                <td>${escapeHtml(app.position)}</td>
+                <td>${escapeHtml(app.jobType)}</td>
+                <td>${escapeHtml(app.city || '-')}</td>
+                <td>${app.applyDate}</td>
+                <td><span class="status-badge status-${app.status}">${app.status}</span></td>
+                <td>${app.nextEvent ? app.nextEvent + ' ' + app.nextDate : '-'}</td>
+                <td>${escapeHtml(app.username || '-')}</td>
+                <td>
+                    <div class="actions">
+                        ${isOwner ? `<button class="btn btn-secondary btn-sm" onclick="editApplication('${app.id}')">编辑</button>` : ''}
+                        ${isOwner ? `<button class="btn btn-danger btn-sm" onclick="deleteApplication('${app.id}')">删除</button>` : '<span class="text-muted" style="font-size:12px;color:var(--text-secondary)">仅查看</span>'}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
 
     tbody.querySelectorAll('.company-logo').forEach(img => {
         renderLogo(img, img.dataset.company);
