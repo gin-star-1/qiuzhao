@@ -144,6 +144,17 @@ body {
     font-size: 13px;
 }
 
+.todo-content {
+    min-width: 0;
+}
+
+.todo-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
 .todo-dot {
     width: 6px;
     height: 6px;
@@ -422,6 +433,11 @@ body {
     color: var(--text-secondary);
 }
 
+.recent-username {
+    color: #0f766e;
+    font-weight: 600;
+}
+
 .card-meta {
     display: flex;
     flex-direction: column;
@@ -505,6 +521,28 @@ body {
 .schedule-info p {
     font-size: 13px;
     color: var(--text-secondary);
+}
+
+.user-tag {
+    display: inline-flex;
+    max-width: 96px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    overflow: hidden;
+    vertical-align: middle;
+    color: #0f766e;
+    background: #ccfbf1;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.user-tag-compact {
+    max-width: 84px;
+    padding: 1px 6px;
+    font-size: 10px;
 }
 
 .schedule-tag {
@@ -1060,6 +1098,15 @@ body.dark .setting-item,
 body.dark .detail-info,
 body.dark .timeline-item {
     background: #334155;
+}
+
+body.dark .recent-username,
+body.dark .user-tag {
+    color: #99f6e4;
+}
+
+body.dark .user-tag {
+    background: #134e4a;
 }
 
 .theme-toggle {

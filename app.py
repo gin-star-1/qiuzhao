@@ -200,9 +200,8 @@ def me():
 @app.route('/api/applications', methods=['GET'])
 @authenticated_user_required
 def get_applications():
-    apps = Application.query.filter_by(
-        user_id=g.current_user.id
-    ).order_by(Application.apply_date.desc()).all()
+    # 投递记录在团队内共享展示，写操作仍在对应接口中按创建者校验。
+    apps = Application.query.order_by(Application.apply_date.desc()).all()
     return jsonify([a.to_dict() for a in apps])
 
 
@@ -325,10 +324,7 @@ def delete_application(app_id):
 @app.route('/api/applications/<app_id>/history', methods=['GET'])
 @authenticated_user_required
 def get_application_history(app_id):
-    app_record = Application.query.filter_by(
-        id=app_id,
-        user_id=g.current_user.id
-    ).first()
+    app_record = db.session.get(Application, app_id)
     if not app_record:
         return jsonify({'message': '记录不存在'}), 404
 
@@ -360,7 +356,7 @@ def update_company(company_id):
 @app.route('/api/stats', methods=['GET'])
 @authenticated_user_required
 def get_stats():
-    apps = Application.query.filter_by(user_id=g.current_user.id).all()
+    apps = Application.query.all()
 
     total = len(apps)
     if total == 0:

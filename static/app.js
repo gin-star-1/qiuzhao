@@ -535,7 +535,7 @@ function renderRecentList() {
             </div>
             <div class="card-info">
                 <h3>${escapeHtml(app.company)} · ${escapeHtml(app.position)}</h3>
-                <p>${escapeHtml(app.jobType)} ${app.city ? '· ' + escapeHtml(app.city) : ''} · ${escapeHtml(app.username || '未知用户')}</p>
+                <p>${escapeHtml(app.jobType)} ${app.city ? '· ' + escapeHtml(app.city) : ''} · ${renderRecentUsername(app.username)}</p>
             </div>
             <div class="card-meta">
                 <span class="status-badge status-${app.status}">${app.status}</span>
@@ -578,7 +578,7 @@ function renderSchedule() {
                 </div>
                 <div class="schedule-info">
                     <h4>${escapeHtml(app.company)} · ${escapeHtml(app.position)}</h4>
-                    <p>${escapeHtml(app.nextEvent)}${app.city ? ` · ${escapeHtml(app.city)}` : ''}</p>
+                    <p>${escapeHtml(app.nextEvent)}${app.city ? ` · ${escapeHtml(app.city)}` : ''} ${renderUserTag(app.username)}</p>
                 </div>
                 <span class="schedule-tag ${getEventTagClass(app.nextEvent, isToday)}">${isToday ? '今日' : escapeHtml(app.nextEvent)}</span>
             </div>
@@ -620,7 +620,7 @@ function renderDeadlines() {
                 </div>
                 <div class="schedule-info">
                     <h4>${escapeHtml(app.company)} · ${escapeHtml(app.position)}</h4>
-                    <p>${escapeHtml(app.username || '未知用户')}</p>
+                    <p>${renderUserTag(app.username)}</p>
                 </div>
                 <span class="deadline-tag ${isSoon ? 'deadline-soon' : ''}">${isSoon ? '即将截止' : '未截止'}</span>
             </div>
@@ -645,8 +645,8 @@ function renderSidebarTodo() {
     container.innerHTML = todayEvents.map(app => `
         <div class="todo-item">
             <span class="todo-dot"></span>
-            <div>
-                <div>${escapeHtml(app.company)}</div>
+            <div class="todo-content">
+                <div class="todo-title">${escapeHtml(app.company)} ${renderUserTag(app.username)}</div>
                 <div class="todo-time">${escapeHtml(app.nextEvent)} · ${escapeHtml(app.position)}</div>
             </div>
         </div>
@@ -703,7 +703,7 @@ function renderTable() {
                 <td>${app.applyDate}</td>
                 <td><span class="status-badge status-${app.status}">${app.status}</span></td>
                 <td>${app.nextEvent ? app.nextEvent + ' ' + app.nextDate : '-'}</td>
-                <td>${escapeHtml(app.username || '-')}</td>
+                <td>${renderUserTag(app.username)}</td>
                 <td>
                     <div class="actions">
                         <button class="btn btn-secondary btn-sm" onclick="openDetailModal('${app.id}')">详情</button>
@@ -920,7 +920,7 @@ async function openDetailModal(appId) {
         <div class="detail-item"><span class="detail-label">网申截止</span><span class="detail-value">${app.deadline || '-'}</span></div>
         <div class="detail-item"><span class="detail-label">当前进度</span><span class="detail-value"><span class="status-badge status-${app.status}">${app.status}</span></span></div>
         <div class="detail-item"><span class="detail-label">下一步</span><span class="detail-value">${app.nextEvent ? app.nextEvent + ' ' + app.nextDate : '-'}</span></div>
-        <div class="detail-item"><span class="detail-label">创建者</span><span class="detail-value">${escapeHtml(app.username || '-')}</span></div>
+        <div class="detail-item"><span class="detail-label">创建者</span><span class="detail-value">${renderUserTag(app.username)}</span></div>
         <div class="detail-item" style="grid-column: 1 / -1"><span class="detail-label">备注</span><span class="detail-value">${escapeHtml(app.remark || '-')}</span></div>
     `;
 
@@ -949,7 +949,7 @@ async function openDetailModal(appId) {
                 }
                 return `
                     <div class="timeline-item">
-                        <div class="timeline-time">${time} · ${escapeHtml(h.username || '未知用户')}</div>
+                        <div class="timeline-time">${time} · ${renderUserTag(h.username, 'user-tag user-tag-compact')}</div>
                         <div class="timeline-content">${content}</div>
                         ${h.note ? `<div class="timeline-note">${escapeHtml(h.note)}</div>` : ''}
                     </div>
@@ -1128,9 +1128,14 @@ async function importData(e) {
 }
 
 async function clearAllData() {
-    if (!confirm('确定要清空所有投递记录吗？此操作不可恢复。')) return;
+    const ownApplications = applications.filter(app => currentUser && String(app.userId) === String(currentUser.id));
+    if (ownApplications.length === 0) {
+        showToast('暂无可清空的个人投递记录', 'error');
+        return;
+    }
+    if (!confirm('确定要清空自己的投递记录吗？此操作不可恢复。')) return;
     try {
-        for (const app of [...applications]) {
+        for (const app of ownApplications) {
             await api(`/applications/${app.id}`, { method: 'DELETE' });
         }
         await loadApplications();
@@ -1177,6 +1182,24 @@ function escapeHtml(str) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
+}
+
+function getDisplayUsername(username, maxLength = 8) {
+    const fullName = String(username || '未知用户');
+    const characters = Array.from(fullName);
+    return characters.length > maxLength
+        ? `${characters.slice(0, maxLength).join('')}...`
+        : fullName;
+}
+
+function renderUserTag(username, className = 'user-tag') {
+    const fullName = String(username || '未知用户');
+    return `<span class="${className}" title="${escapeHtml(fullName)}">${escapeHtml(getDisplayUsername(fullName))}</span>`;
+}
+
+function renderRecentUsername(username) {
+    const fullName = String(username || '未知用户');
+    return `<span class="recent-username" title="${escapeHtml(fullName)}">${escapeHtml(getDisplayUsername(fullName))}</span>`;
 }
 
 function setTodayDate() {
