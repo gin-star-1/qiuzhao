@@ -9,6 +9,7 @@ class User(db.Model):
     __tablename__ = 'users'
 
     id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(255), unique=True, nullable=False, index=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
@@ -24,9 +25,21 @@ class User(db.Model):
     def to_dict(self):
         return {
             'id': self.id,
+            'email': self.email,
             'username': self.username,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
+
+
+class EmailCode(db.Model):
+    __tablename__ = 'email_codes'
+
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(255), nullable=False, index=True)
+    code = db.Column(db.String(4), nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    used_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False)
 
 
 class Application(db.Model):

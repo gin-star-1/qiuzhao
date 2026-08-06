@@ -21,23 +21,34 @@
             </div>
             <form class="auth-form" id="loginForm">
                 <div class="form-group">
-                    <label for="loginUsername">用户名</label>
-                    <input type="text" id="loginUsername" placeholder="请输入用户名" required>
+                    <label for="loginEmail">邮箱</label>
+                    <input type="email" id="loginEmail" placeholder="请输入注册邮箱" autocomplete="email" required>
                 </div>
                 <div class="form-group">
                     <label for="loginPassword">密码</label>
-                    <input type="password" id="loginPassword" placeholder="请输入密码" required>
+                    <input type="password" id="loginPassword" placeholder="请输入密码" autocomplete="current-password" required>
                 </div>
                 <button type="submit" class="btn btn-primary btn-block">登录</button>
             </form>
             <form class="auth-form hidden" id="registerForm">
                 <div class="form-group">
+                    <label for="registerEmail">邮箱</label>
+                    <input type="email" id="registerEmail" placeholder="请输入常用邮箱" autocomplete="email" required>
+                </div>
+                <div class="form-group">
+                    <label for="registerCode">验证码</label>
+                    <div class="verification-code-row">
+                        <input type="text" id="registerCode" placeholder="4 位验证码" inputmode="numeric" maxlength="4" autocomplete="one-time-code" required>
+                        <button type="button" class="btn btn-secondary" id="sendCodeBtn">发送验证码</button>
+                    </div>
+                </div>
+                <div class="form-group">
                     <label for="registerUsername">用户名</label>
-                    <input type="text" id="registerUsername" placeholder="请输入用户名" required>
+                    <input type="text" id="registerUsername" placeholder="请输入用户名" autocomplete="username" required>
                 </div>
                 <div class="form-group">
                     <label for="registerPassword">密码</label>
-                    <input type="password" id="registerPassword" placeholder="至少 6 位密码" required>
+                    <input type="password" id="registerPassword" placeholder="至少 6 位密码" autocomplete="new-password" required>
                 </div>
                 <button type="submit" class="btn btn-primary btn-block">注册</button>
             </form>
@@ -48,10 +59,10 @@
         <!-- 左侧任务栏 -->
         <aside class="sidebar">
             <div class="sidebar-header">
-                <div class="avatar">王</div>
+                <div class="avatar" id="userAvatar">秋</div>
                 <div class="user-info">
-                    <h2>王爷</h2>
-                    <p>秋招冲刺中</p>
+                    <h2 id="sidebarUserName">未登录</h2>
+                    <p id="sidebarUserEmail">登录后显示邮箱</p>
                 </div>
             </div>
 

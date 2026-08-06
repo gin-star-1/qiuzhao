@@ -13,6 +13,7 @@ let applications = [];
 let charts = {};
 let currentUser = null;
 let authToken = localStorage.getItem(TOKEN_KEY);
+let emailCodeCooldownTimer = null;
 
 // DOM 元素
 document.addEventListener('DOMContentLoaded', () => {
@@ -51,9 +52,9 @@ async function api(path, options = {}) {
         const res = await fetch(url, { ...options, headers });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-            if (res.status === 401) {
+            if (res.status === 401 || res.status === 422) {
                 logout();
-                throw new Error('登录已过期，请重新登录');
+                throw new Error('登录状态无效，请重新登录');
             }
             throw new Error(data.message || `请求失败: ${res.status}`);
         }
@@ -92,26 +93,68 @@ function initAuthUI() {
 
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const username = document.getElementById('loginUsername').value.trim();
+        const email = document.getElementById('loginEmail').value.trim();
         const password = document.getElementById('loginPassword').value;
-        await login(username, password);
+        await login(email, password);
     });
 
     registerForm.addEventListener('submit', async (e) => {
         e.preventDefault();
+        const email = document.getElementById('registerEmail').value.trim();
+        const code = document.getElementById('registerCode').value.trim();
         const username = document.getElementById('registerUsername').value.trim();
         const password = document.getElementById('registerPassword').value;
-        await register(username, password);
+        await register(email, code, username, password);
     });
 
+    document.getElementById('sendCodeBtn').addEventListener('click', requestEmailCode);
     document.getElementById('logoutBtn').addEventListener('click', logout);
 }
 
-async function register(username, password) {
+async function requestEmailCode() {
+    const email = document.getElementById('registerEmail').value.trim();
+    const button = document.getElementById('sendCodeBtn');
+
+    if (!email) {
+        showToast('请先输入邮箱', 'error');
+        return;
+    }
+
+    button.disabled = true;
+    try {
+        const data = await api(`/email/code?email=${encodeURIComponent(email)}`);
+        showToast(data.message, 'success');
+        startEmailCodeCooldown(button);
+    } catch (err) {
+        showToast(err.message, 'error');
+        button.disabled = false;
+    }
+}
+
+function startEmailCodeCooldown(button) {
+    let remainingSeconds = 60;
+    clearInterval(emailCodeCooldownTimer);
+    button.disabled = true;
+    button.textContent = `${remainingSeconds}s 后重试`;
+
+    emailCodeCooldownTimer = setInterval(() => {
+        remainingSeconds -= 1;
+        if (remainingSeconds <= 0) {
+            clearInterval(emailCodeCooldownTimer);
+            emailCodeCooldownTimer = null;
+            button.disabled = false;
+            button.textContent = '发送验证码';
+            return;
+        }
+        button.textContent = `${remainingSeconds}s 后重试`;
+    }, 1000);
+}
+
+async function register(email, code, username, password) {
     try {
         const data = await api('/register', {
             method: 'POST',
-            body: JSON.stringify({ username, password })
+            body: JSON.stringify({ email, code, username, password })
         });
         setAuth(data.token, data.user);
         showToast('注册成功', 'success');
@@ -122,11 +165,11 @@ async function register(username, password) {
     }
 }
 
-async function login(username, password) {
+async function login(email, password) {
     try {
         const data = await api('/login', {
             method: 'POST',
-            body: JSON.stringify({ username, password })
+            body: JSON.stringify({ email, password })
         });
         setAuth(data.token, data.user);
         showToast('登录成功', 'success');
@@ -165,12 +208,21 @@ function logout() {
 function showApp() {
     document.getElementById('authContainer').classList.add('hidden');
     document.getElementById('appContainer').classList.remove('hidden');
-    document.getElementById('currentUserName').textContent = currentUser ? currentUser.username : '未登录';
+    updateUserProfile();
 }
 
 function showAuth() {
     document.getElementById('authContainer').classList.remove('hidden');
     document.getElementById('appContainer').classList.add('hidden');
+}
+
+function updateUserProfile() {
+    const username = currentUser?.username || '未登录';
+    const email = currentUser?.email || '登录后显示邮箱';
+    document.getElementById('currentUserName').textContent = username;
+    document.getElementById('sidebarUserName').textContent = username;
+    document.getElementById('sidebarUserEmail').textContent = email;
+    document.getElementById('userAvatar').textContent = username.charAt(0).toUpperCase();
 }
 
 // ---------------- 应用数据 ----------------
@@ -255,6 +307,11 @@ async function handleSubmit(e) {
 
     if (!appData.company || !appData.position || !appData.applyDate || !appData.status) {
         showToast('请填写必填项', 'error');
+        return;
+    }
+
+    if ((appData.nextEvent && !appData.nextDate) || (!appData.nextEvent && appData.nextDate)) {
+        showToast('请同时填写下一步事件和事件日期', 'error');
         return;
     }
 
@@ -497,22 +554,18 @@ function renderSchedule() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const upcoming = applications
-        .filter(a => a.nextEvent && a.nextDate)
-        .map(a => {
-            const d = parseLocalDate(a.nextDate);
-            return { ...a, eventTime: d ? d.getTime() : 0 };
-        })
-        .filter(a => a.eventTime >= today.getTime() - 86400000)
-        .sort((a, b) => a.eventTime - b.eventTime);
+    const upcoming = getScheduledApplications()
+        .filter(app => app.eventTime >= today.getTime())
+        .sort((a, b) => a.eventTime - b.eventTime)
+        .slice(0, 10);
 
     if (upcoming.length === 0) {
-        container.innerHTML = '<p class="empty-tip">暂无 upcoming 的笔试或面试</p>';
+        container.innerHTML = '<p class="empty-tip">暂无即将到来的笔试或面试</p>';
         return;
     }
 
     container.innerHTML = upcoming.map(app => {
-        const date = parseLocalDate(app.nextDate);
+        const date = app.eventDate;
         const isToday = date && date.getTime() === today.getTime();
         const month = date ? date.getMonth() + 1 : '';
         const day = date ? date.getDate() : '';
@@ -525,9 +578,9 @@ function renderSchedule() {
                 </div>
                 <div class="schedule-info">
                     <h4>${escapeHtml(app.company)} · ${escapeHtml(app.position)}</h4>
-                    <p>${escapeHtml(app.city || '')} · ${escapeHtml(app.username || '未知用户')}</p>
+                    <p>${escapeHtml(app.nextEvent)}${app.city ? ` · ${escapeHtml(app.city)}` : ''}</p>
                 </div>
-                <span class="schedule-tag ${getEventTagClass(app.nextEvent, isToday)}">${isToday ? '今日' : app.nextEvent}</span>
+                <span class="schedule-tag ${getEventTagClass(app.nextEvent, isToday)}">${isToday ? '今日' : escapeHtml(app.nextEvent)}</span>
             </div>
         `;
     }).join('');
@@ -580,12 +633,8 @@ function renderSidebarTodo() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const todayEvents = applications
-        .filter(a => a.nextEvent && a.nextDate)
-        .filter(a => {
-            const d = parseLocalDate(a.nextDate);
-            return d && d.getTime() === today.getTime();
-        })
+    const todayEvents = getScheduledApplications()
+        .filter(app => app.eventTime === today.getTime())
         .sort((a, b) => a.nextEvent.localeCompare(b.nextEvent));
 
     if (todayEvents.length === 0) {
@@ -598,10 +647,24 @@ function renderSidebarTodo() {
             <span class="todo-dot"></span>
             <div>
                 <div>${escapeHtml(app.company)}</div>
-                <div class="todo-time">${app.nextEvent} · ${escapeHtml(app.username || '未知用户')}</div>
+                <div class="todo-time">${escapeHtml(app.nextEvent)} · ${escapeHtml(app.position)}</div>
             </div>
         </div>
     `).join('');
+}
+
+function getScheduledApplications() {
+    return applications
+        .filter(app => app.nextEvent && app.nextDate)
+        .map(app => {
+            const eventDate = parseLocalDate(app.nextDate);
+            return {
+                ...app,
+                eventDate,
+                eventTime: eventDate ? eventDate.getTime() : null
+            };
+        })
+        .filter(app => app.eventTime !== null);
 }
 
 function renderTable() {

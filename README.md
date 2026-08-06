@@ -1,6 +1,6 @@
 # 秋招投递追踪
 
-自制秋招网站：基于 Flask 后端 + 原生前端的秋招投递管理应用，支持用户注册/登录，数据存储在服务端 SQLite 数据库中，可多设备同步。
+自制秋招网站：基于 Flask 后端 + 原生前端的秋招投递管理应用，支持邮箱注册/登录，数据存储在 MySQL 数据库中，可多设备同步。
 
 ## 功能
 
@@ -26,29 +26,66 @@
 需要 Python 3.8+。
 
 ```bash
-cd qiuzhao-tracker
+conda activate flask-qiuzhao
 pip install -r requirements.txt
 ```
 
-### 2. 启动后端
+### 2. 配置环境变量
 
-```bash
-python app.py
+复制 `.env.example` 为 `.env`，并填入本地 MySQL 与 QQ 邮箱 SMTP 配置。`.env` 已被 Git 忽略，不会提交密码或邮件授权码。
+
+默认数据库配置为：
+
+```env
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_DATABASE=qiuzhao_db
 ```
 
-默认运行在 `http://localhost:5000`，首次启动会自动创建数据库。
+### 3. 初始化或升级数据库
 
-### 3. 访问应用
+```bash
+flask --app app db upgrade
+```
+
+### 4. 启动后端
+
+```bash
+flask --app app run --debug
+```
+
+默认运行在 `http://localhost:5000`。
+
+### 5. 访问应用
 
 打开浏览器访问 `http://localhost:5000`，注册账号后即可使用。
+
+## 数据库迁移
+
+项目使用 Flask-Migrate 管理 MySQL 数据库结构。模型发生变更后，生成并应用新的迁移：
+
+```bash
+flask --app app db migrate -m "describe schema change"
+flask --app app db upgrade
+```
+
+服务器部署时只需配置同名环境变量，并执行 `flask --app app db upgrade`，无需运行 `db.create_all()`。
+
+## 认证接口
+
+- `GET /api/email/code?email=you@example.com`：发送 4 位注册验证码，3 分钟有效。
+- `POST /api/register`：提交 `email`、`code`、`username`、`password` 注册。
+- `POST /api/login`：提交 `email`、`password` 登录。
 
 ## 文件结构
 
 ```
 qiuzhao-tracker/
 ├── app.py                  # Flask 后端主入口
-├── models.py               # 数据库模型（User / Application / ApplicationHistory）
-├── config.py               # 配置
+├── models.py               # 数据库模型（含 EmailCode）
+├── config.py               # 数据库和邮件配置
+├── migrations/             # Flask-Migrate 迁移文件
+├── .env.example            # 环境变量模板
 ├── requirements.txt        # Python 依赖
 ├── .gitignore
 ├── static/                 # 前端静态文件
@@ -60,14 +97,18 @@ qiuzhao-tracker/
 
 ## 部署
 
+详细的 Ubuntu + Docker Compose 部署步骤见 [DEPLOYMENT.md](DEPLOYMENT.md)。
+
 ### 后端部署（推荐 Render / Railway / PythonAnywhere）
 
 1. 将代码推送到 GitHub
 2. 在 Render/Railway 等平台选择 Python/Flask 项目
-3. 设置环境变量（可选）：
+3. 设置环境变量：
    - `SECRET_KEY`：用于 Flask session
    - `JWT_SECRET_KEY`：用于 JWT 签名
-   - `DATABASE_URL`：数据库连接字符串，默认使用 SQLite
+   - `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DATABASE`：MySQL 配置
+   - `MAIL_SERVER`、`MAIL_PORT`、`MAIL_USE_SSL`、`MAIL_USERNAME`、`MAIL_PASSWORD`、`MAIL_DEFAULT_SENDER`：验证码邮件配置
+4. 部署后执行 `flask --app app db upgrade`
 
 ### 前端
 
@@ -79,6 +120,6 @@ qiuzhao-tracker/
 
 ## 注意事项
 
-- 默认使用 SQLite，适合个人或小型使用。如需多人高并发，请替换为 PostgreSQL/MySQL。
+- 当前默认使用 MySQL，数据库密码与邮件授权码必须仅保存在部署环境的环境变量或 `.env` 文件中。
 - 生产环境务必修改 `SECRET_KEY` 和 `JWT_SECRET_KEY`。
 - 公司 Logo 使用 Clearbit Logo API，部分公司可能无法匹配，会自动 fallback 到首字母。

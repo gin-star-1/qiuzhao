@@ -808,6 +808,26 @@ body {
     box-shadow: var(--shadow);
 }
 
+.verification-code-row {
+    display: flex;
+    gap: 10px;
+}
+
+.verification-code-row input {
+    min-width: 0;
+    flex: 1;
+}
+
+.verification-code-row .btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.verification-code-row .btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+}
+
 .auth-form.hidden {
     display: none;
 }

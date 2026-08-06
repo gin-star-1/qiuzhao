@@ -1,15 +1,24 @@
 import os
+import re
+import secrets
+import string
+from datetime import datetime, timedelta, timezone
 from functools import wraps
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, g, request, jsonify, send_from_directory
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from flask_cors import CORS
+from flask_mail import Mail, Message
+from flask_migrate import Migrate
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from config import Config
-from models import db, User, Application, ApplicationHistory, Company
+from models import db, User, EmailCode, Application, ApplicationHistory, Company
 
 
 app = Flask(__name__, static_folder='static')
 app.config.from_object(Config)
+Config.validate()
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 
 # 允许跨域，开发时前端独立运行也能访问
 CORS(app)
@@ -17,6 +26,10 @@ CORS(app)
 # 初始化数据库和 JWT
 db.init_app(app)
 jwt = JWTManager(app)
+mail = Mail(app)
+migrate = Migrate(app, db)
+
+EMAIL_PATTERN = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 
 
 def generate_id():
@@ -47,27 +60,110 @@ def static_files(path):
 
 # ---------------- 认证接口 ----------------
 
+def normalize_email(email):
+    return email.strip().lower()
+
+
+def is_valid_email(email):
+    return bool(EMAIL_PATTERN.fullmatch(email))
+
+
+def utcnow():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def authenticated_user_required(view):
+    @wraps(view)
+    @jwt_required()
+    def wrapped(*args, **kwargs):
+        try:
+            user_id = int(get_jwt_identity())
+        except (TypeError, ValueError):
+            return jsonify({'message': '邮箱或密码错误，请检查输入是否有错误'}), 401
+
+        g.current_user = db.session.get(User, user_id)
+        if not g.current_user:
+            return jsonify({'message': '用户不存在'}), 401
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+@app.route('/api/email/code', methods=['GET'])
+def get_email_code():
+    email = normalize_email(request.args.get('email', ''))
+    if not email:
+        return jsonify({'message': '请输入邮箱'}), 400
+    if not is_valid_email(email):
+        return jsonify({'message': '请输入有效的邮箱地址'}), 400
+    if User.query.filter_by(email=email).first():
+        return jsonify({'message': '该邮箱已注册，请直接登录'}), 409
+
+    code = ''.join(secrets.choice(string.digits) for _ in range(4))
+    message = Message(
+        subject='【gin哥秋招投递追踪】注册验证码',
+        recipients=[email],
+        body=f'亲爱的😍😘，您的注册验证码为：{code}。验证码 3 分钟内有效，请勿泄露给他人。'
+    )
+
+    try:
+        mail.send(message)
+    except Exception:
+        return jsonify({'message': '验证码发送失败，请检查邮件配置后重试'}), 500
+
+    now = utcnow()
+    EmailCode.query.filter_by(email=email, used_at=None).update(
+        {EmailCode.used_at: now},
+        synchronize_session=False
+    )
+    db.session.add(EmailCode(
+        email=email,
+        code=code,
+        expires_at=now + timedelta(minutes=3)
+    ))
+    db.session.commit()
+    return jsonify({'message': '验证码已发送，有效期 3 分钟'})
+
+
 @app.route('/api/register', methods=['POST'])
 def register():
     data = request.get_json() or {}
+    email = normalize_email(data.get('email', ''))
+    code = data.get('code', '').strip()
     username = data.get('username', '').strip()
     password = data.get('password', '')
 
-    if not username or not password:
-        return jsonify({'message': '用户名和密码不能为空'}), 400
+    if not email or not code or not username or not password:
+        return jsonify({'message': '邮箱、验证码、用户名和密码不能为空'}), 400
+
+    if not is_valid_email(email):
+        return jsonify({'message': '请输入有效的邮箱地址'}), 400
 
     if len(password) < 6:
         return jsonify({'message': '密码长度至少 6 位'}), 400
 
+    if User.query.filter_by(email=email).first():
+        return jsonify({'message': '邮箱已注册'}), 409
+
     if User.query.filter_by(username=username).first():
         return jsonify({'message': '用户名已存在'}), 409
 
-    user = User(username=username)
+    email_code = EmailCode.query.filter(
+        EmailCode.email == email,
+        EmailCode.code == code,
+        EmailCode.used_at.is_(None),
+        EmailCode.expires_at >= utcnow()
+    ).order_by(EmailCode.created_at.desc()).first()
+    if not email_code:
+        return jsonify({'message': '验证码错误或已过期'}), 400
+
+    user = User(email=email, username=username)
     user.set_password(password)
     db.session.add(user)
+    email_code.used_at = utcnow()
     db.session.commit()
 
-    token = create_access_token(identity=user.id)
+    token = create_access_token(identity=str(user.id))
     return jsonify({
         'message': '注册成功',
         'token': token,
@@ -78,14 +174,14 @@ def register():
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.get_json() or {}
-    username = data.get('username', '').strip()
+    email = normalize_email(data.get('email', ''))
     password = data.get('password', '')
 
-    user = User.query.filter_by(username=username).first()
+    user = User.query.filter_by(email=email).first()
     if not user or not user.check_password(password):
-        return jsonify({'message': '用户名或密码错误'}), 401
+        return jsonify({'message': '邮箱或密码错误'}), 401
 
-    token = create_access_token(identity=user.id)
+    token = create_access_token(identity=str(user.id))
     return jsonify({
         'message': '登录成功',
         'token': token,
@@ -94,29 +190,26 @@ def login():
 
 
 @app.route('/api/me', methods=['GET'])
-@jwt_required()
+@authenticated_user_required
 def me():
-    user_id = get_jwt_identity()
-    user = User.query.get(user_id)
-    if not user:
-        return jsonify({'message': '用户不存在'}), 404
-    return jsonify(user.to_dict())
+    return jsonify(g.current_user.to_dict())
 
 
 # ---------------- 投递记录接口 ----------------
 
 @app.route('/api/applications', methods=['GET'])
-@jwt_required()
+@authenticated_user_required
 def get_applications():
-    # 所有登录用户都可以看到全部投递记录
-    apps = Application.query.order_by(Application.apply_date.desc()).all()
+    apps = Application.query.filter_by(
+        user_id=g.current_user.id
+    ).order_by(Application.apply_date.desc()).all()
     return jsonify([a.to_dict() for a in apps])
 
 
 @app.route('/api/applications', methods=['POST'])
-@jwt_required()
+@authenticated_user_required
 def create_application():
-    user_id = get_jwt_identity()
+    user_id = g.current_user.id
     data = request.get_json() or {}
 
     required = ['company', 'position', 'applyDate', 'status']
@@ -161,9 +254,9 @@ def create_application():
 
 
 @app.route('/api/applications/<app_id>', methods=['PUT'])
-@jwt_required()
+@authenticated_user_required
 def update_application(app_id):
-    user_id = get_jwt_identity()
+    user_id = g.current_user.id
     app_record = Application.query.filter_by(id=app_id, user_id=user_id).first()
     if not app_record:
         return jsonify({'message': '记录不存在'}), 404
@@ -217,9 +310,9 @@ def update_application(app_id):
 
 
 @app.route('/api/applications/<app_id>', methods=['DELETE'])
-@jwt_required()
+@authenticated_user_required
 def delete_application(app_id):
-    user_id = get_jwt_identity()
+    user_id = g.current_user.id
     app_record = Application.query.filter_by(id=app_id, user_id=user_id).first()
     if not app_record:
         return jsonify({'message': '记录不存在'}), 404
@@ -230,8 +323,15 @@ def delete_application(app_id):
 
 
 @app.route('/api/applications/<app_id>/history', methods=['GET'])
-@jwt_required()
+@authenticated_user_required
 def get_application_history(app_id):
+    app_record = Application.query.filter_by(
+        id=app_id,
+        user_id=g.current_user.id
+    ).first()
+    if not app_record:
+        return jsonify({'message': '记录不存在'}), 404
+
     histories = ApplicationHistory.query.filter_by(application_id=app_id).order_by(ApplicationHistory.created_at.desc()).all()
     return jsonify([h.to_dict() for h in histories])
 
@@ -239,14 +339,14 @@ def get_application_history(app_id):
 # ---------------- 公司共享面经 ----------------
 
 @app.route('/api/companies', methods=['GET'])
-@jwt_required()
+@authenticated_user_required
 def get_companies():
     companies = Company.query.order_by(Company.name).all()
     return jsonify([c.to_dict() for c in companies])
 
 
 @app.route('/api/companies/<int:company_id>', methods=['PUT'])
-@jwt_required()
+@authenticated_user_required
 def update_company(company_id):
     company = Company.query.get_or_404(company_id)
     data = request.get_json() or {}
@@ -258,9 +358,9 @@ def update_company(company_id):
 # ---------------- 统计看板 ----------------
 
 @app.route('/api/stats', methods=['GET'])
-@jwt_required()
+@authenticated_user_required
 def get_stats():
-    apps = Application.query.all()
+    apps = Application.query.filter_by(user_id=g.current_user.id).all()
 
     total = len(apps)
     if total == 0:
@@ -324,10 +424,10 @@ def get_stats():
 # ---------------- 数据迁移/初始化 ----------------
 
 @app.route('/api/seed', methods=['POST'])
-@jwt_required()
+@authenticated_user_required
 def seed_data():
     """把前端 initial_data.js 中的数据批量导入当前用户账号。"""
-    user_id = get_jwt_identity()
+    user_id = g.current_user.id
     data = request.get_json() or {}
     items = data.get('data', [])
 
@@ -359,6 +459,4 @@ def seed_data():
 # ---------------- 启动 ----------------
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
     app.run(debug=True, host='0.0.0.0', port=5000)
